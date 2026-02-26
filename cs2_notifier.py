@@ -15,23 +15,36 @@ RSS_SOURCES = [
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 LAST_UPDATE_FILE = "last_update.txt"
 
+# URL estable del logo de CS2 para el avatar del bot
+CS2_LOGO_URL = "https://raw.githubusercontent.com/SteamDatabase/GameTracking-CS2/master/game/core/pak01_dir/resource/flash/econ/tournaments/logos/csgo.png"
+
 def clean_html(raw_html):
-    """Limpia el HTML para que se vea con el formato de las capturas (listas y sub-listas)."""
+    """Limpia el HTML mejorando el espaciado para mayor legibilidad."""
+    # 1. Formatear listas y añadir un salto de línea extra para separación
     cleantext = re.sub(r'<li>\s*<ul>', '<ul>', raw_html) 
-    cleantext = re.sub(r'<li>', '• ', cleantext)
-    cleantext = re.sub(r'</ul>\s*•', '\n•', cleantext)
+    cleantext = re.sub(r'<li>', '\n• ', cleantext) # Salto de línea antes de cada punto
+    
+    # 2. Resaltar secciones entre corchetes (ej: [ MISC ])
+    cleantext = re.sub(r'\[(.*?)\]', r'\n**[ \1 ]**', cleantext)
+    
+    # 3. Negritas
     cleantext = re.sub(r'<(b|strong)>', '**', cleantext)
     cleantext = re.sub(r'</(b|strong)>', '**', cleantext)
-    cleantext = re.sub(r'<(br|p|/li|/ul|/p)>', '\n', cleantext)
-    cleantext = re.sub(r'<.*?>', '', cleantext)
-    cleantext = re.sub(r'\n\s*\n', '\n', cleantext)
     
+    # 4. Saltos de línea generales
+    cleantext = re.sub(r'<(br|p|/li|/ul|/p)>', '\n', cleantext)
+    
+    # 5. Limpiar etiquetas restantes
+    cleantext = re.sub(r'<.*?>', '', cleantext)
+    
+    # 6. Post-procesado de líneas para espaciado "aireado"
     lines = []
     for line in cleantext.split('\n'):
-        if line.strip():
-            lines.append(line.strip())
+        stripped = line.strip()
+        if stripped:
+            lines.append(stripped + "\n") 
     
-    return '\n'.join(lines)
+    return '\n'.join(lines).strip()
 
 def get_last_saved_id():
     if os.path.exists(LAST_UPDATE_FILE):
@@ -44,7 +57,7 @@ def save_last_id(entry_id):
         f.write(entry_id)
 
 def build_payload(entry):
-    """Construye el objeto JSON para Discord."""
+    """Construye el payload con el botón de View y espaciado mejorado."""
     content = ""
     if 'content' in entry:
         content = entry.content[0].value
@@ -53,25 +66,32 @@ def build_payload(entry):
         
     clean_content = clean_html(content)
     
-    if len(clean_content) > 2000:
-        clean_content = clean_content[:1997] + "..."
+    if len(clean_content) > 1800:
+        clean_content = clean_content[:1797] + "..."
 
+    # Imagen de cabecera (banner)
     image_url = "https://cdn.akamai.steamstatic.com/steam/apps/730/capsule_617x353.jpg"
     fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
 
+    # Estructura del mensaje de Discord
     return {
-        "username": "Counter-Strike 2 Updates",
-        "avatar_url": "https://logodownload.org/wp-content/uploads/2014/11/counter-strike-logo-2.png",
         "embeds": [{
-            "title": f"{entry.title}",
-            "description": clean_content,
+            "title": f"✨ {entry.title}",
+            "description": clean_content + "\n\n**━━━━━━━━━━━━━━━━━━━━━━━**",
             "url": entry.link,
             "color": 3092790,
+            "fields": [
+                {
+                    "name": "\u200b", 
+                    "value": f"**[View ↗️]({entry.link})**",
+                    "inline": False
+                }
+            ],
             "image": {
                 "url": image_url
             },
             "footer": {
-                "text": f"Detectado el {fecha_actual} | Valve Official",
+                "text": f"Actualizado: {fecha_actual}",
                 "icon_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
             }
         }]
@@ -80,16 +100,13 @@ def build_payload(entry):
 def send_to_discord(entry):
     payload = build_payload(entry)
     
-    # DEBUG: Imprimir JSON para previsualización externa si no hay URL de Webhook
     if not DISCORD_WEBHOOK_URL:
-        print("--- PREVIEW JSON (Copia desde aquí abajo) ---")
         print(json.dumps(payload, indent=4))
-        print("--- FIN PREVIEW ---")
         return
 
     response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
     if response.status_code == 204:
-        print("Mensaje enviado correctamente.")
+        print("Mensaje elegante enviado.")
     else:
         print(f"Error: {response.status_code}")
 
@@ -109,13 +126,10 @@ def main():
         return
 
     latest_entry = feed.entries[0]
-    
-    # Si quieres ver la preview sin enviar nada, puedes comentar las líneas de abajo
-    # y simplemente llamar a send_to_discord(latest_entry) sin tener el Webhook configurado.
-    
     latest_id = getattr(latest_entry, 'id', latest_entry.link)
     last_id = get_last_saved_id()
 
+    # Siempre forzamos el envío si no hay Webhook para ver el JSON en los logs
     if latest_id != last_id or not DISCORD_WEBHOOK_URL:
         send_to_discord(latest_entry)
         if DISCORD_WEBHOOK_URL:
