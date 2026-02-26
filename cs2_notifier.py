@@ -16,41 +16,43 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 LAST_UPDATE_FILE = "last_update.txt"
 
 def clean_html(raw_html):
-    """Limpia el HTML mejorando el espaciado e indentación para sub-puntos."""
+    """Limpia el HTML eliminando caracteres innecesarios y corrigiendo sub-puntos."""
     
-    # 1. Identificar listas anidadas (sub-puntos) antes de perder las etiquetas
-    # Reemplazamos los <li> que están dentro de un <ul> secundario por un marcador especial
+    # 1. Identificar sub-puntos antes de limpiar etiquetas
+    # Buscamos específicamente la estructura de listas anidadas de Steam/Valve
     cleantext = re.sub(r'<ul>\s*<li>', '<ul><subli>', raw_html)
     cleantext = re.sub(r'</li>\s*<li>', '</li><subli>', cleantext)
     
-    # 2. Formatear puntos principales y sub-puntos
+    # 2. Formatear puntos principales y sub-puntos con el estilo solicitado
     cleantext = re.sub(r'<li>', '\n• ', cleantext)
-    cleantext = re.sub(r'<subli>', '\n　　◦ ', cleantext) # Usamos un espacio especial y otro símbolo para sub-puntos
+    cleantext = re.sub(r'<subli>', '\n　　◦ ', cleantext)
     
-    # 3. Resaltar secciones entre corchetes (ej: [ MISC ])
+    # 3. Formatear secciones [ TITULO ]
     cleantext = re.sub(r'\[(.*?)\]', r'\n**[ \1 ]**', cleantext)
     
     # 4. Negritas
     cleantext = re.sub(r'<(b|strong)>', '**', cleantext)
     cleantext = re.sub(r'</(b|strong)>', '**', cleantext)
     
-    # 5. Saltos de línea generales
+    # 5. Saltos de línea y limpieza de etiquetas
     cleantext = re.sub(r'<(br|p|/li|/ul|/p)>', '\n', cleantext)
-    
-    # 6. Limpiar etiquetas restantes
     cleantext = re.sub(r'<.*?>', '', cleantext)
     
-    # 7. Post-procesado para asegurar legibilidad
+    # 6. Post-procesado para eliminar "\" y mejorar el aireado
     final_lines = []
+    # Eliminamos el caracter \ si aparece suelto como separador
+    cleantext = cleantext.replace('\\', '')
+    
     lines = cleantext.split('\n')
     for line in lines:
         content = line.strip()
         if content:
-            # Si es un encabezado de sección o un punto principal, asegurar que respire
+            # Si es un encabezado o punto principal, añadimos espacio arriba para que respire
             if content.startswith('**[') or content.startswith('•'):
                 final_lines.append("\n" + content)
             else:
-                final_lines.append(line) # Mantiene la indentación de los sub-puntos
+                # Mantenemos la línea tal cual para los sub-puntos (con su indentación)
+                final_lines.append(line)
     
     return '\n'.join(final_lines).strip()
 
@@ -65,9 +67,8 @@ def save_last_id(entry_id):
         f.write(entry_id)
 
 def build_payload(entry):
-    """Construye el payload con el botón de View y espaciado mejorado."""
+    """Construye el payload para Discord con formato limpio."""
     content = ""
-    # Intentamos obtener el contenido enriquecido primero
     if 'content' in entry:
         content = entry.content[0].value
     else:
@@ -75,7 +76,6 @@ def build_payload(entry):
         
     clean_content = clean_html(content)
     
-    # Límite de seguridad para evitar errores de Discord
     if len(clean_content) > 3500:
         clean_content = clean_content[:3497] + "..."
 
@@ -136,7 +136,6 @@ def main():
     latest_id = getattr(latest_entry, 'id', latest_entry.link)
     last_id = get_last_saved_id()
 
-    # Si no hay Webhook, imprimimos el JSON
     if latest_id != last_id or not DISCORD_WEBHOOK_URL:
         send_to_discord(latest_entry)
         if DISCORD_WEBHOOK_URL:
