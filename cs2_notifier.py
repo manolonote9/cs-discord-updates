@@ -19,16 +19,16 @@ def clean_html(raw_html):
     """Limpia el HTML eliminando caracteres innecesarios y corrigiendo sub-puntos."""
     
     # 1. Identificar sub-puntos antes de limpiar etiquetas
-    # Buscamos específicamente la estructura de listas anidadas de Steam/Valve
+    # Reemplazamos la estructura de sub-listas para que no se pierda al limpiar HTML
     cleantext = re.sub(r'<ul>\s*<li>', '<ul><subli>', raw_html)
     cleantext = re.sub(r'</li>\s*<li>', '</li><subli>', cleantext)
     
-    # 2. Formatear puntos principales y sub-puntos con el estilo solicitado
+    # 2. Formatear secciones [ TITULO ] con espacio extra
+    cleantext = re.sub(r'\[(.*?)\]', r'\n\n**[ \1 ]**\n', cleantext)
+    
+    # 3. Formatear puntos principales y sub-puntos
     cleantext = re.sub(r'<li>', '\n• ', cleantext)
     cleantext = re.sub(r'<subli>', '\n　　◦ ', cleantext)
-    
-    # 3. Formatear secciones [ TITULO ]
-    cleantext = re.sub(r'\[(.*?)\]', r'\n**[ \1 ]**', cleantext)
     
     # 4. Negritas
     cleantext = re.sub(r'<(b|strong)>', '**', cleantext)
@@ -38,23 +38,37 @@ def clean_html(raw_html):
     cleantext = re.sub(r'<(br|p|/li|/ul|/p)>', '\n', cleantext)
     cleantext = re.sub(r'<.*?>', '', cleantext)
     
-    # 6. Post-procesado para eliminar "\" y mejorar el aireado
-    final_lines = []
-    # Eliminamos el caracter \ si aparece suelto como separador
+    # 6. Post-procesado para corregir saltos de línea y eliminar basura
     cleantext = cleantext.replace('\\', '')
     
+    final_lines = []
     lines = cleantext.split('\n')
+    
     for line in lines:
         content = line.strip()
-        if content:
-            # Si es un encabezado o punto principal, añadimos espacio arriba para que respire
-            if content.startswith('**[') or content.startswith('•'):
-                final_lines.append("\n" + content)
-            else:
-                # Mantenemos la línea tal cual para los sub-puntos (con su indentación)
-                final_lines.append(line)
+        if not content:
+            continue
+            
+        # Si es un punto principal (•), nos aseguramos de que tenga un salto de línea previo para separarlo
+        if content.startswith('•'):
+            final_lines.append("\n" + content)
+        # Si es un sub-punto (◦), lo mantenemos pegado a su padre pero con su indentación
+        elif content.startswith('◦') or content.startswith('　　◦'):
+            # Aseguramos la indentación manual si se perdió
+            indent = "　　◦ "
+            actual_text = content.lstrip('◦').lstrip('　').strip()
+            final_lines.append(indent + actual_text)
+        # Si es un título de sección, ya tiene saltos por la regex de arriba
+        elif content.startswith('**['):
+            final_lines.append(content)
+        else:
+            final_lines.append(content)
     
-    return '\n'.join(final_lines).strip()
+    # Unimos todo y limpiamos espacios múltiples generados
+    result = '\n'.join(final_lines).strip()
+    result = re.sub(r'\n{3,}', '\n\n', result) # No más de 2 saltos seguidos
+    
+    return result
 
 def get_last_saved_id():
     if os.path.exists(LAST_UPDATE_FILE):
