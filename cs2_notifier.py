@@ -5,6 +5,7 @@ import json
 
 # Lista de fuentes (por si una falla)
 RSS_SOURCES = [
+    "https://store.steampowered.com/feeds/news/app/730/",
     "https://blog.counter-strike.net/index.php/category/updates/feed/",
     "https://steamcommunity.com/games/730/rss/"
 ]
@@ -51,12 +52,17 @@ def main():
     feed = None
     # Intentamos obtener datos de las fuentes disponibles
     for url in RSS_SOURCES:
-        # Usamos un User-Agent para evitar bloqueos de Valve
-        content = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}).content
-        feed = feedparser.parse(content)
-        if feed.entries:
-            print(f"Datos obtenidos exitosamente de: {url}")
-            break
+        try:
+            # Usamos un User-Agent para evitar bloqueos de Valve/Steam
+            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+            if response.status_code == 200:
+                feed = feedparser.parse(response.content)
+                if feed.entries:
+                    print(f"Datos obtenidos exitosamente de: {url}")
+                    break
+        except Exception as e:
+            print(f"Error al conectar con {url}: {e}")
+            continue
 
     if not feed or not feed.entries:
         print("No se pudieron obtener entradas de ninguna fuente RSS.")
