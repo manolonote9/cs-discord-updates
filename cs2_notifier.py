@@ -67,6 +67,9 @@ def clean_html(raw_html):
     # Unimos todo y limpiamos espacios múltiples generados
     result = '\n'.join(final_lines).strip()
     result = re.sub(r'\n{3,}', '\n\n', result) # No más de 2 saltos seguidos
+
+    # Evita que Discord interprete nombres técnicos con guiones bajos como markdown.
+    result = result.replace('_', '\\_')
     
     return result
 
