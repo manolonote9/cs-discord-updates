@@ -3,9 +3,12 @@ import requests
 import os
 import json
 
-# Configuración
-RSS_URL = "https://blog.counter-strike.net/index.php/category/updates/feed/"
-# El Webhook se lee desde las variables de entorno de GitHub para mayor seguridad
+# Lista de fuentes (por si una falla)
+RSS_SOURCES = [
+    "https://blog.counter-strike.net/index.php/category/updates/feed/",
+    "https://steamcommunity.com/games/730/rss/"
+]
+
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 LAST_UPDATE_FILE = "last_update.txt"
 
@@ -45,13 +48,23 @@ def main():
         print("Error: No se ha configurado la variable DISCORD_WEBHOOK.")
         return
 
-    feed = feedparser.parse(RSS_URL)
-    if not feed.entries:
-        print("No se pudieron obtener entradas del RSS.")
+    feed = None
+    # Intentamos obtener datos de las fuentes disponibles
+    for url in RSS_SOURCES:
+        # Usamos un User-Agent para evitar bloqueos de Valve
+        content = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}).content
+        feed = feedparser.parse(content)
+        if feed.entries:
+            print(f"Datos obtenidos exitosamente de: {url}")
+            break
+
+    if not feed or not feed.entries:
+        print("No se pudieron obtener entradas de ninguna fuente RSS.")
         return
 
     latest_entry = feed.entries[0]
-    latest_id = latest_entry.id
+    # Usamos el link como ID si el ID no está disponible
+    latest_id = getattr(latest_entry, 'id', latest_entry.link)
     
     last_id = get_last_saved_id()
 
