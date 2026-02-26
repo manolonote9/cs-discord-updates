@@ -15,36 +15,44 @@ RSS_SOURCES = [
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 LAST_UPDATE_FILE = "last_update.txt"
 
-# URL estable del logo de CS2 para el avatar del bot
-CS2_LOGO_URL = "https://raw.githubusercontent.com/SteamDatabase/GameTracking-CS2/master/game/core/pak01_dir/resource/flash/econ/tournaments/logos/csgo.png"
-
 def clean_html(raw_html):
-    """Limpia el HTML mejorando el espaciado para mayor legibilidad."""
-    # 1. Formatear listas y añadir un salto de línea extra para separación
-    cleantext = re.sub(r'<li>\s*<ul>', '<ul>', raw_html) 
-    cleantext = re.sub(r'<li>', '\n• ', cleantext) # Salto de línea antes de cada punto
+    """Limpia el HTML mejorando el espaciado e indentación para sub-puntos."""
     
-    # 2. Resaltar secciones entre corchetes (ej: [ MISC ])
+    # 1. Identificar listas anidadas (sub-puntos) antes de perder las etiquetas
+    # Reemplazamos los <li> que están dentro de un <ul> secundario por un marcador especial
+    cleantext = re.sub(r'<ul>\s*<li>', '<ul><subli>', raw_html)
+    cleantext = re.sub(r'</li>\s*<li>', '</li><subli>', cleantext)
+    
+    # 2. Formatear puntos principales y sub-puntos
+    cleantext = re.sub(r'<li>', '\n• ', cleantext)
+    cleantext = re.sub(r'<subli>', '\n　　◦ ', cleantext) # Usamos un espacio especial y otro símbolo para sub-puntos
+    
+    # 3. Resaltar secciones entre corchetes (ej: [ MISC ])
     cleantext = re.sub(r'\[(.*?)\]', r'\n**[ \1 ]**', cleantext)
     
-    # 3. Negritas
+    # 4. Negritas
     cleantext = re.sub(r'<(b|strong)>', '**', cleantext)
     cleantext = re.sub(r'</(b|strong)>', '**', cleantext)
     
-    # 4. Saltos de línea generales
+    # 5. Saltos de línea generales
     cleantext = re.sub(r'<(br|p|/li|/ul|/p)>', '\n', cleantext)
     
-    # 5. Limpiar etiquetas restantes
+    # 6. Limpiar etiquetas restantes
     cleantext = re.sub(r'<.*?>', '', cleantext)
     
-    # 6. Post-procesado de líneas para espaciado "aireado"
-    lines = []
-    for line in cleantext.split('\n'):
-        stripped = line.strip()
-        if stripped:
-            lines.append(stripped + "\n") 
+    # 7. Post-procesado para asegurar legibilidad
+    final_lines = []
+    lines = cleantext.split('\n')
+    for line in lines:
+        content = line.strip()
+        if content:
+            # Si es un encabezado de sección o un punto principal, asegurar que respire
+            if content.startswith('**[') or content.startswith('•'):
+                final_lines.append("\n" + content)
+            else:
+                final_lines.append(line) # Mantiene la indentación de los sub-puntos
     
-    return '\n'.join(lines).strip()
+    return '\n'.join(final_lines).strip()
 
 def get_last_saved_id():
     if os.path.exists(LAST_UPDATE_FILE):
@@ -59,6 +67,7 @@ def save_last_id(entry_id):
 def build_payload(entry):
     """Construye el payload con el botón de View y espaciado mejorado."""
     content = ""
+    # Intentamos obtener el contenido enriquecido primero
     if 'content' in entry:
         content = entry.content[0].value
     else:
@@ -66,14 +75,13 @@ def build_payload(entry):
         
     clean_content = clean_html(content)
     
-    if len(clean_content) > 1800:
-        clean_content = clean_content[:1797] + "..."
+    # Límite de seguridad para evitar errores de Discord
+    if len(clean_content) > 3500:
+        clean_content = clean_content[:3497] + "..."
 
-    # Imagen de cabecera (banner)
     image_url = "https://cdn.akamai.steamstatic.com/steam/apps/730/capsule_617x353.jpg"
     fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    # Estructura del mensaje de Discord
     return {
         "embeds": [{
             "title": f"✨ {entry.title}",
@@ -83,7 +91,7 @@ def build_payload(entry):
             "fields": [
                 {
                     "name": "\u200b", 
-                    "value": f"**[View ↗️]({entry.link})**",
+                    "value": f"**[View Full Notes ↗️]({entry.link})**",
                     "inline": False
                 }
             ],
@@ -92,7 +100,6 @@ def build_payload(entry):
             },
             "footer": {
                 "text": f"Actualizado: {fecha_actual}",
-                "icon_url": "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
             }
         }]
     }
@@ -129,7 +136,7 @@ def main():
     latest_id = getattr(latest_entry, 'id', latest_entry.link)
     last_id = get_last_saved_id()
 
-    # Siempre forzamos el envío si no hay Webhook para ver el JSON en los logs
+    # Si no hay Webhook, imprimimos el JSON
     if latest_id != last_id or not DISCORD_WEBHOOK_URL:
         send_to_discord(latest_entry)
         if DISCORD_WEBHOOK_URL:
