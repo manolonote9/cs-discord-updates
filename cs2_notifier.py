@@ -30,15 +30,15 @@ def clean_html(raw_html):
         # Reemplaza sub-listas primero
         def sub_list(match):
             sub = match.group(1)
-            # Reemplaza <li> dentro de la sublista
-            sub = re.sub(r'<li>(.*?)</li>', r'　　◦ \1', sub, flags=re.DOTALL)
+            # Reemplaza <li> dentro de la sublista (Discord aplica sangría automática con -)
+            sub = re.sub(r'<li>(.*?)</li>', r'  - \1', sub, flags=re.DOTALL)
             # Procesa cualquier <ul> anidado dentro
             sub = re.sub(r'<ul>(.*?)</ul>', sub_list, sub, flags=re.DOTALL)
             return sub
 
         html = re.sub(r'<ul>(.*?)</ul>', sub_list, html, flags=re.DOTALL)
         # Reemplaza los <li> principales
-        html = re.sub(r'<li>(.*?)</li>', r'• \1', html, flags=re.DOTALL)
+        html = re.sub(r'<li>(.*?)</li>', r'- \1', html, flags=re.DOTALL)
         return html
 
     cleantext = parse_list(raw_html)
@@ -55,7 +55,10 @@ def clean_html(raw_html):
         content = line.strip()
         if content:
             final_lines.append(content)
+    
+    # Añadir un salto de línea entre secciones principales
     result = '\n'.join(final_lines)
+    result = re.sub(r'\n(\[.*?\]|\b[A-Z\s]{4,}\b)', r'\n\n\1', result)
 
     # --- Proteger identificadores técnicos ---
     def protect_identifiers(match):
@@ -91,6 +94,10 @@ def build_payload(entry):
         content = entry.get('summary', entry.get('description', ''))
 
     clean_content = clean_html(content)
+    
+    # Añadir separador visual solo si hay contenido
+    if clean_content:
+        clean_content = clean_content + "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     # Límite seguro embed description = 4096
     if len(clean_content) > 4000:
@@ -102,7 +109,7 @@ def build_payload(entry):
     payload = {
         "embeds": [{
             "title": f"✨ {entry.title}",
-            "description": clean_content + "\n\n**━━━━━━━━━━━━━━━━━━━━━━━**",
+            "description": clean_content,
             "url": entry.link,
             "color": 3092790,
             "image": {
