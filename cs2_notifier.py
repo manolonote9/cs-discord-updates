@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 
 # ==============================
-# CONFIG
+# CONFIGURACIÓN
 # ==============================
 RSS_SOURCES = [
     "https://store.steampowered.com/feeds/news/app/730/",
@@ -14,61 +14,57 @@ RSS_SOURCES = [
     "https://steamcommunity.com/games/730/rss/"
 ]
 
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
+# Si no usas variable de entorno, pega tu URL aquí entre las comillas
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK", "") 
 LAST_UPDATE_FILE = "last_update.txt"
 
 # ==============================
-# HTML CLEANER (listas anidadas)
+# LIMPIEZA Y FORMATO (MARKDOWN)
 # ==============================
 def clean_html(raw_html):
     """
-    Limpia HTML del feed de Steam y formatea correctamente listas anidadas para Discord.
+    Limpia el HTML de Steam y aplica formato Markdown de Discord.
     """
-
-    # --- Función recursiva para listas <ul>/<li> ---
+    # 1. Manejo de listas anidadas
     def parse_list(html):
-        # Reemplaza sub-listas primero
         def sub_list(match):
             sub = match.group(1)
-            # Reemplaza <li> dentro de la sublista
+            # Sub-items (círculo hueco)
             sub = re.sub(r'<li>(.*?)</li>', r'　　◦ \1', sub, flags=re.DOTALL)
-            # Procesa cualquier <ul> anidado dentro
-            sub = re.sub(r'<ul>(.*?)</ul>', sub_list, sub, flags=re.DOTALL)
             return sub
-
+        
+        # Primero procesa listas internas
         html = re.sub(r'<ul>(.*?)</ul>', sub_list, html, flags=re.DOTALL)
-        # Reemplaza los <li> principales
+        # Luego lista principal (punto sólido)
         html = re.sub(r'<li>(.*?)</li>', r'• \1', html, flags=re.DOTALL)
         return html
 
     cleantext = parse_list(raw_html)
 
-    # --- Limpiar HTML restante ---
+    # 2. Eliminar etiquetas HTML restantes y normalizar saltos
     cleantext = re.sub(r'<(br|p|/li|/ul|/p)>', '\n', cleantext)
     cleantext = re.sub(r'<.*?>', '', cleantext)
-    cleantext = cleantext.replace('\r\n', '\n').replace('\r', '\n')
-    cleantext = cleantext.strip()
+    
+    # 3. Formateo de Secciones (Pone en negrita [ MAPS ], GAMEPLAY:, etc.)
+    cleantext = re.sub(r'(\[?\s?[A-Z]{3,}\s?\]?:?)', r'**\1**', cleantext)
 
-    # --- Línea por línea para limpiar espacios y saltos ---
-    final_lines = []
-    for line in cleantext.split('\n'):
-        content = line.strip()
-        if content:
-            final_lines.append(content)
-    result = '\n'.join(final_lines)
+    # 4. Limpieza de líneas vacías
+    lines = [line.strip() for line in cleantext.split('\n') if line.strip()]
+    result = '\n'.join(lines)
 
-    # --- Proteger identificadores técnicos ---
+    # 5. Proteger identificadores técnicos (versiones, archivos, comandos)
     def protect_identifiers(match):
         token = match.group(0)
+        # Si tiene _, . o CamelCase, se envuelve en bloque de código `text`
         if "_" in token or "." in token or (any(c.isupper() for c in token[1:]) and token[0].isupper()):
             return f"`{token}`"
         return token
 
-    result = re.sub(r'\b[A-Za-z_][A-Za-z0-9_.]*\b', protect_identifiers, result)
+    result = re.sub(r'\b[A-Za-z_][A-Za-z0-9_.]+\b', protect_identifiers, result)
     return result
 
 # ==============================
-# STORAGE
+# PERSISTENCIA
 # ==============================
 def get_last_saved_id():
     if os.path.exists(LAST_UPDATE_FILE):
@@ -81,7 +77,7 @@ def save_last_id(entry_id):
         f.write(entry_id)
 
 # ==============================
-# DISCORD PAYLOAD
+# CONSTRUCCIÓN DEL EMBED
 # ==============================
 def build_payload(entry):
     content = ""
@@ -92,25 +88,31 @@ def build_payload(entry):
 
     clean_content = clean_html(content)
 
-    # Límite seguro embed description = 4096
-    if len(clean_content) > 4000:
-        clean_content = clean_content[:3990] + "..."
+    # Límite visual: si es muy largo, recortamos para no saturar Discord
+    if len(clean_content) > 1200:
+        clean_content = clean_content[:1190] + "...\n\n*(Notas truncadas para mayor brevedad)*"
 
+    # Estética CS2
     image_url = "https://cdn.akamai.steamstatic.com/steam/apps/730/capsule_617x353.jpg"
-    fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
+    cs_orange = 15844367 
 
     payload = {
         "embeds": [{
-            "title": f"✨ {entry.title}",
-            "description": clean_content + "\n\n**━━━━━━━━━━━━━━━━━━━━━━━**",
+            "title": f"🛠️ {entry.title}",
+            "description": f"{clean_content}\n\n**━━━━━━━━━━━━━━━━━━━━━━━**",
             "url": entry.link,
-            "color": 3092790,
+            "color": cs_orange,
+            "author": {
+                "name": "Counter-Strike 2 Update",
+                "icon_url": "https://cms.counter-strike.net/wp-content/uploads/2023/03/cs2_white_logo.png"
+            },
             "image": {
                 "url": image_url
             },
             "footer": {
-                "text": f"Actualizado: {fecha_actual}",
-            }
+                "text": "Valve Corporation • Notas de Lanzamiento",
+            },
+            "timestamp": datetime.utcnow().isoformat()
         }],
         "components": [
             {
@@ -118,8 +120,8 @@ def build_payload(entry):
                 "components": [
                     {
                         "type": 2,
-                        "style": 5,  # LINK button
-                        "label": "View Full Notes ↗️",
+                        "style": 5,
+                        "label": "Leer notas completas 🌐",
                         "url": entry.link
                     }
                 ]
@@ -130,22 +132,21 @@ def build_payload(entry):
     return payload
 
 # ==============================
-# DISCORD SENDER
+# ENVÍO Y EJECUCIÓN
 # ==============================
 def send_to_discord(entry):
     payload = build_payload(entry)
     if not DISCORD_WEBHOOK_URL:
+        print("⚠️ No hay Webhook configurado. Previsualización del JSON:")
         print(json.dumps(payload, indent=4, ensure_ascii=False))
         return
+
     response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
     if response.status_code in (200, 204):
-        print("Mensaje enviado correctamente.")
+        print("✅ Mensaje enviado a Discord con éxito.")
     else:
-        print(f"Error {response.status_code}: {response.text}")
+        print(f"❌ Error {response.status_code}: {response.text}")
 
-# ==============================
-# MAIN
-# ==============================
 def main():
     feed = None
     for url in RSS_SOURCES:
@@ -159,20 +160,26 @@ def main():
                 feed = feedparser.parse(response.content)
                 if feed.entries:
                     break
-        except Exception:
+        except Exception as e:
+            print(f"Error accediendo a {url}: {e}")
             continue
 
     if not feed or not feed.entries:
+        print("No se pudieron obtener entradas de los feeds.")
         return
 
     latest_entry = feed.entries[0]
+    # Usar ID o link como identificador único
     latest_id = getattr(latest_entry, 'id', latest_entry.link)
     last_id = get_last_saved_id()
 
-    if latest_id != last_id or not DISCORD_WEBHOOK_URL:
+    # Si es noticia nueva o si no hay Webhook (para pruebas)
+    if latest_id != last_id:
         send_to_discord(latest_entry)
         if DISCORD_WEBHOOK_URL:
             save_last_id(latest_id)
+    else:
+        print("☕ No hay actualizaciones nuevas por ahora.")
 
 if __name__ == "__main__":
     main()
