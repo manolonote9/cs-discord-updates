@@ -18,49 +18,49 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 LAST_UPDATE_FILE = "last_update.txt"
 
 # ==============================
-# HTML CLEANER (listas anidadas)
+# HTML CLEANER (nested lists)
 # ==============================
 def clean_html(raw_html):
     """
-    Limpia HTML del feed de Steam y formatea correctamente listas anidadas para Discord.
+    Cleans HTML from the Steam feed and correctly formats nested lists for Discord.
     """
 
-    # --- Función recursiva para listas <ul>/<li> ---
+    # --- Recursive function for <ul>/<li> lists ---
     def parse_list(html):
-        # Reemplaza sub-listas primero
+        # Replace sub-lists first
         def sub_list(match):
             sub = match.group(1)
-            # Reemplaza <li> dentro de la sublista (Discord aplica sangría automática con -)
+            # Replace <li> inside the sublist (Discord applies auto-indent with -)
             sub = re.sub(r'<li>(.*?)</li>', r'  - \1', sub, flags=re.DOTALL)
-            # Procesa cualquier <ul> anidado dentro
+            # Process any nested <ul> within
             sub = re.sub(r'<ul>(.*?)</ul>', sub_list, sub, flags=re.DOTALL)
             return sub
 
         html = re.sub(r'<ul>(.*?)</ul>', sub_list, html, flags=re.DOTALL)
-        # Reemplaza los <li> principales
+        # Replace main <li> items
         html = re.sub(r'<li>(.*?)</li>', r'- \1', html, flags=re.DOTALL)
         return html
 
     cleantext = parse_list(raw_html)
 
-    # --- Limpiar HTML restante ---
+    # --- Clean remaining HTML ---
     cleantext = re.sub(r'<(br|p|/li|/ul|/p)>', '\n', cleantext)
     cleantext = re.sub(r'<.*?>', '', cleantext)
     cleantext = cleantext.replace('\r\n', '\n').replace('\r', '\n')
     cleantext = cleantext.strip()
 
-    # --- Línea por línea para limpiar espacios y saltos ---
+    # --- Line by line to clean spaces and breaks ---
     final_lines = []
     for line in cleantext.split('\n'):
         content = line.strip()
         if content:
             final_lines.append(content)
     
-    # Añadir un salto de línea entre secciones principales
+    # Add a line break between main sections
     result = '\n'.join(final_lines)
     result = re.sub(r'\n(\[.*?\]|\b[A-Z\s]{4,}\b)', r'\n\n\1', result)
 
-    # --- Proteger identificadores técnicos ---
+    # --- Protect technical identifiers ---
     def protect_identifiers(match):
         token = match.group(0)
         if "_" in token or "." in token or (any(c.isupper() for c in token[1:]) and token[0].isupper()):
@@ -95,16 +95,16 @@ def build_payload(entry):
 
     clean_content = clean_html(content)
     
-    # Añadir separador visual solo si hay contenido
+    # Add visual separator only if there is content
     if clean_content:
         clean_content = clean_content + "\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    # Límite seguro embed description = 4096
+    # Safe limit for embed description = 4096
     if len(clean_content) > 4000:
         clean_content = clean_content[:3990] + "..."
 
     image_url = "https://cdn.akamai.steamstatic.com/steam/apps/730/capsule_617x353.jpg"
-    fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M")
+    current_date = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     payload = {
         "embeds": [{
@@ -116,7 +116,7 @@ def build_payload(entry):
                 "url": image_url
             },
             "footer": {
-                "text": f"Actualizado: {fecha_actual}",
+                "text": f"Updated: {current_date}",
             }
         }],
         "components": [
@@ -142,11 +142,12 @@ def build_payload(entry):
 def send_to_discord(entry):
     payload = build_payload(entry)
     if not DISCORD_WEBHOOK_URL:
+        # Print payload for debugging if no webhook is set
         print(json.dumps(payload, indent=4, ensure_ascii=False))
         return
     response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
     if response.status_code in (200, 204):
-        print("Mensaje enviado correctamente.")
+        print("Message sent successfully.")
     else:
         print(f"Error {response.status_code}: {response.text}")
 
@@ -176,6 +177,7 @@ def main():
     latest_id = getattr(latest_entry, 'id', latest_entry.link)
     last_id = get_last_saved_id()
 
+    # Send update if ID is new or if testing without a webhook
     if latest_id != last_id or not DISCORD_WEBHOOK_URL:
         send_to_discord(latest_entry)
         if DISCORD_WEBHOOK_URL:
